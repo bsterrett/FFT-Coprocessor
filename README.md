@@ -15,5 +15,5 @@ pieces of hardware: one to accomplish an 8-bit address reversal, and one to perf
 "butterfly" computation necessary for the Cooley-Tukey FFT algorithm. 
 
 The VHDL, generated from the fft.fdl Gezel file, becomes very dense. The two hardware modules
-from above are found in //pcores/fsladdress_v1_00_a and //pcores/fslbutteryfly_v1_00_a. These
+from above are found in //pcores/fsladdress_v1_00_a and //pcores/fslbutterfly_v1_00_a. These
 modules are what the FPGA is programmed with.
