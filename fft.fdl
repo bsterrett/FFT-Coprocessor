@@ -1,0 +1,387 @@
+dp addresshw(in size	: ns(32);
+	in address_in	: ns(32);
+	in ld		: ns(1);
+	out address_out : ns(32);
+	out done	: ns(1)) {
+
+	sig bit0, bit1, bit2, bit3, bit4, bit5, bit6, bit7, bit8, bit9 : ns(1);
+	reg tadd0, tadd1, tadd2, tadd3, tadd4, tadd5, tadd6, tadd7: ns(11);
+	reg cnt : ns(3);
+
+	always{		
+		done = (cnt == 5);
+		cnt  = ld ? 0 : ((cnt <= 5) ? cnt + 1 : cnt);
+
+		bit0 =	size[10] ? address_in[9] :
+			size[9]  ? address_in[8] :
+			size[8]  ? address_in[7] : 
+			size[7]  ? address_in[6] : 0;
+
+		bit1 =	size[10] ? address_in[8] :
+			size[9]  ? address_in[7] :
+			size[8]  ? address_in[6] :
+			size[7]  ? address_in[5] : 0;
+
+		bit2 =	size[10] ? address_in[7] :
+			size[9]  ? address_in[6] :
+			size[8]  ? address_in[5] :
+			size[7]  ? address_in[4] : 0;
+
+		bit3 =	size[10] ? address_in[6] : 
+			size[9]  ? address_in[5] :
+			size[8]  ? address_in[4] :
+			size[7]  ? address_in[3] : 0;
+
+		bit4 =	size[10] ? address_in[5] :
+			size[9]  ? address_in[4] :
+			size[8]  ? address_in[3] :
+			size[7]  ? address_in[2] : 0;
+
+		bit5 =  size[10] ? address_in[4] :
+			size[9]  ? address_in[3] :
+			size[8]  ? address_in[2] :
+			size[7]  ? address_in[1] : 0;
+
+		bit6 =	size[10] ? address_in[3] :
+			size[9]  ? address_in[2] :
+			size[8]  ? address_in[1] :
+			size[7]  ? address_in[0] : 0;
+
+		bit7 =	size[10] ? address_in[2] :
+			size[9]  ? address_in[1] :
+			size[8]  ? address_in[0] : 0;
+
+		bit8 =	size[10] ? address_in[1] :
+			size[9]  ? address_in[0] : 0;
+
+		bit9 =	size[10] ? address_in[0] : 0;
+
+		tadd0 = bit0 + (bit1 << 1);
+		tadd1 = (bit2 << 2) + (bit3 << 3);
+		tadd2 = (bit4 << 4) + (bit5 << 5);
+		tadd3 = (bit6 << 6) + (bit7 << 7);
+		tadd4 = (bit8 << 8) + (bit9 << 9);
+		tadd5 = tadd0 + tadd1;
+		tadd6 = tadd2 + tadd3;
+		tadd7 = tadd4 + tadd5;
+		address_out = (tc(32)) tadd6 + tadd7;
+	}
+
+}
+
+dp ffthw  (in  X	: ns(32);
+           in  Y	: ns(32);
+           in  u1	: ns(32);
+	   in  u2	: ns(32);
+	   in  ld	: ns(1);
+           out dout1	: ns(32);
+           out dout2	: ns(32);
+	   out done     : ns(1)) {
+
+  reg mul1  : ns(32);  
+  reg mul2  : ns(32);  
+  reg mul3  : ns(32);  
+  reg mul4  : ns(32);  
+
+  reg outX  : ns(32);
+  reg outY  : ns(32);
+
+  reg cnt  : ns( 8);
+
+  always {
+    cnt  = ld ? 0 : ((cnt <= 4) ? cnt + 1 : cnt);
+    done = (cnt == 4);
+
+    mul1  = u1 * X;
+    mul2  = u2 * Y;
+    mul3  = u1 * Y;
+    mul4  = u2 * X;
+
+    dout1 = ((tc(32)) (mul1 - mul2)) >> 16;
+    dout2 = ((tc(32)) (mul3 + mul4)) >> 16;
+  }
+}
+
+dp butterfly_fsmd    (in  rdata   : tc(32);  // interface to slave
+                   in  exists  : ns(1);
+                   out read    : ns(1);
+
+                   out wdata   : tc(32);  // interface to master
+                   in  full    : ns(1);
+                   out write   : ns(1)) {
+
+  sig Z, R, X, Y, u1, u2, dout1, dout2 : ns(32);
+  sig done, ld   : ns(1);
+  use ffthw(X, Y, u1, u2, ld, dout1, dout2, done);
+  reg rX, rY, rZ, rR, ru1, ru2, rdout1, rdout2 : ns(32);
+  reg cnt    : ns(8);
+  sig nxtcnt : ns(8);
+
+  always { 
+    Y      = rY;
+    X      = rX;
+    u1	   = ru1;
+    u2     = ru2;
+
+    rY     = (exists & read) ? rdata : rY;
+    rX     = (exists & read) ? rY    : rX;
+    ru1    = (exists & read) ? rX    : ru1;
+    ru2    = (exists & read) ? ru1   : ru2;
+
+    rdout1     = (~full & write) ? rdout2 :
+                 (done)          ? dout1  : rdout1;
+    rdout2     = (done)          ? dout2  : rdout2;
+    wdata  = rdout1;
+
+    read   = (cnt[0] | cnt[1] | cnt[2] | cnt[3]);
+    write  = (cnt[6] | cnt[7]);
+    ld     = cnt[4];
+
+    nxtcnt = cnt << 1;
+    cnt    = (cnt[0] & exists) ? nxtcnt :
+             (cnt[1] & exists) ? nxtcnt :
+             (cnt[2] & exists) ? nxtcnt :
+             (cnt[3] & exists) ? nxtcnt :
+              cnt[4]	       ? nxtcnt :
+             (cnt[5] & done)   ? nxtcnt :
+	     (cnt[6] & ~full)  ? nxtcnt :
+	     (cnt[7] & ~full)  ? nxtcnt :
+             (cnt == 0)        ? 1      :
+              cnt;
+  }
+}
+
+dp address_fsmd    (in  rdata   : tc(32);  // interface to slave
+                   in  exists  : ns(1);
+                   out read    : ns(1);
+
+                   out wdata   : tc(32);  // interface to master
+                   in  full    : ns(1);
+                   out write   : ns(1)) {
+
+	sig size, address_in, address_out : ns(32);
+	sig done, ld   : ns(1);
+	use addresshw(size, address_in, ld, address_out, done);
+	reg rsize, raddr_in, raddr_out : ns(32);
+  	reg cnt    : ns(5);
+  	sig nxtcnt : ns(5);
+
+	always { 
+		size		= rsize;
+		address_in	= raddr_in;
+		
+		raddr_in	= (exists & read) ? rdata : raddr_in;
+		rsize		= (exists & read) ? raddr_in : rsize;
+		
+		raddr_out	= (done) ? address_out : raddr_out;
+		wdata		= raddr_out;
+
+		read		= (cnt[0] | cnt[1]);
+		ld		= cnt[2];
+		write		= cnt[4];
+
+    		nxtcnt = cnt << 1;
+		cnt   = (cnt[0] & exists) ? nxtcnt :
+			(cnt[1] & exists) ? nxtcnt :
+			 cnt[2]           ? nxtcnt :
+             		(cnt[3] & done)   ? nxtcnt :
+			(cnt[4] & ~full)  ? nxtcnt :
+			(cnt == 0)        ? 1      :
+			 cnt;
+  }
+}
+
+dp fsladdress(  out FSL_S_Clk     : ns(1);   // notused
+               out FSL_S_Read    : ns(1);   // hshk for slave side
+               in  FSL_S_Data    : ns(32);  // data for slave side
+               in  FSL_S_Control : ns(1);   // control for slave side
+               in  FSL_S_Exists  : ns(1);   // hshk for slave side
+               out FSL_M_Clk     : ns(1);   // notused
+               out FSL_M_Write   : ns(1);   // hshk for master side
+               out FSL_M_Data    : ns(32);  // data for master side
+               out FSL_M_Control : ns(1);   // control for master side
+               in  FSL_M_Full    : ns(1)) { // hshk for master side
+
+  sig rdata, wdata       : ns(32);
+  sig write, read        : ns(1);
+  sig exists, full       : ns(1);
+
+  use address_fsmd(rdata, exists, read, 
+                      wdata, full, write);
+
+  always {
+    rdata         = FSL_S_Data;
+    exists        = FSL_S_Exists;
+    FSL_S_Read    = read;
+
+    FSL_M_Data    = wdata;
+    FSL_M_Control = 0;
+    FSL_M_Write   = write;
+    full          = FSL_M_Full;
+
+    FSL_S_Clk     = 0;
+    FSL_M_Clk     = 0;
+  }
+}
+
+dp fslbutterfly(  out FSL_S_Clk     : ns(1);   // notused
+               out FSL_S_Read    : ns(1);   // hshk for slave side
+               in  FSL_S_Data    : ns(32);  // data for slave side
+               in  FSL_S_Control : ns(1);   // control for slave side
+               in  FSL_S_Exists  : ns(1);   // hshk for slave side
+               out FSL_M_Clk     : ns(1);   // notused
+               out FSL_M_Write   : ns(1);   // hshk for master side
+               out FSL_M_Data    : ns(32);  // data for master side
+               out FSL_M_Control : ns(1);   // control for master side
+               in  FSL_M_Full    : ns(1)) { // hshk for master side
+
+  sig rdata, wdata       : ns(32);
+  sig write, read        : ns(1);
+  sig exists, full       : ns(1);
+
+  use butterfly_fsmd    (rdata, exists, read, 
+                      wdata, full, write);
+
+  always {
+    rdata         = FSL_S_Data;
+    exists        = FSL_S_Exists;
+    FSL_S_Read    = read;
+
+    FSL_M_Data    = wdata;
+    FSL_M_Control = 0;
+    FSL_M_Write   = write;
+    full          = FSL_M_Full;
+
+    FSL_S_Clk     = 0;
+    FSL_M_Clk     = 0;
+  }
+}
+
+//----------------------------------------------------
+
+ipblock arm1 {
+  iptype "armsystem";
+  ipparm "exec = fft";
+}
+
+ipblock fsl1(in  FSL_S_Clk     : ns(1);   // notused
+            in  FSL_S_Read    : ns(1);   // hshk for slave side
+            out FSL_S_Data    : ns(32);  // data for slave side
+            out FSL_S_Control : ns(1);   // control for slave side
+            out FSL_S_Exists  : ns(1);   // hshk for slave side
+            in  FSL_M_Clk     : ns(1);   // notused
+            in  FSL_M_Write   : ns(1);   // hshk for master side
+            in  FSL_M_Data    : ns(32);  // data for master side
+            in  FSL_M_Control : ns(1);   // control for master side
+            out FSL_M_Full    : ns(1)) { // hshk for master side
+
+   iptype "xilinx_fsl";
+   ipparm "core=arm1";                // strongarm core
+
+   ipparm "slavewrite  = 0x80000000"; // address used to write slave data
+   ipparm "slavestatus = 0x80000004"; // address used to write slave data
+
+   ipparm "masterread  = 0x80000008"; // address used to read master data
+   ipparm "masterstatus= 0x8000000C"; // address used to poll master status
+}
+
+ipblock fsl2(in  FSL_S_Clk     : ns(1);   // notused
+            in  FSL_S_Read    : ns(1);   // hshk for slave side
+            out FSL_S_Data    : ns(32);  // data for slave side
+            out FSL_S_Control : ns(1);   // control for slave side
+            out FSL_S_Exists  : ns(1);   // hshk for slave side
+            in  FSL_M_Clk     : ns(1);   // notused
+            in  FSL_M_Write   : ns(1);   // hshk for master side
+            in  FSL_M_Data    : ns(32);  // data for master side
+            in  FSL_M_Control : ns(1);   // control for master side
+            out FSL_M_Full    : ns(1)) { // hshk for master side
+
+   iptype "xilinx_fsl";
+   ipparm "core=arm1";                // strongarm core
+
+   ipparm "slavewrite  = 0x80000020"; // address used to write slave data
+   ipparm "slavestatus = 0x80000024"; // address used to write slave data
+
+   ipparm "masterread  = 0x80000028"; // address used to read master data
+   ipparm "masterstatus= 0x8000002C"; // address used to poll master status
+}
+
+
+dp top {
+  sig FSL_Clk1       : ns( 1); 
+  sig FSL_Rst1       : ns( 1); 
+  sig FSL_S_Clk1     : ns( 1); 
+  sig FSL_S_Read1    : ns( 1); 
+  sig FSL_S_Data1    : ns(32);
+  sig FSL_S_Control1 : ns( 1); 
+  sig FSL_S_Exists1  : ns( 1); 
+  sig FSL_M_Clk1     : ns( 1); 
+  sig FSL_M_Write1   : ns( 1); 
+  sig FSL_M_Data1    : ns(32);
+  sig FSL_M_Control1 : ns( 1); 
+  sig FSL_M_Full1    : ns( 1); 
+
+  sig FSL_Clk2       : ns( 1); 
+  sig FSL_Rst2       : ns( 1); 
+  sig FSL_S_Clk2     : ns( 1); 
+  sig FSL_S_Read2    : ns( 1); 
+  sig FSL_S_Data2    : ns(32);
+  sig FSL_S_Control2 : ns( 1); 
+  sig FSL_S_Exists2  : ns( 1); 
+  sig FSL_M_Clk2     : ns( 1); 
+  sig FSL_M_Write2   : ns( 1); 
+  sig FSL_M_Data2    : ns(32);
+  sig FSL_M_Control2 : ns( 1); 
+  sig FSL_M_Full2    : ns( 1); 
+
+  use arm1;
+
+  use fsl1(FSL_S_Clk1     ,
+          FSL_S_Read1    ,
+          FSL_S_Data1    ,
+          FSL_S_Control1 ,
+          FSL_S_Exists1  ,
+          FSL_M_Clk1     ,
+          FSL_M_Write1   ,
+          FSL_M_Data1    ,
+          FSL_M_Control1 ,
+          FSL_M_Full1    );
+
+  use fslbutterfly(FSL_S_Clk1     ,
+               FSL_S_Read1    ,
+               FSL_S_Data1    ,
+               FSL_S_Control1 ,
+               FSL_S_Exists1  ,
+               FSL_M_Clk1     ,
+               FSL_M_Write1   ,
+               FSL_M_Data1    ,
+               FSL_M_Control1 ,
+               FSL_M_Full1    );
+
+  use fsl2(FSL_S_Clk2     ,
+          FSL_S_Read2    ,
+          FSL_S_Data2    ,
+          FSL_S_Control2 ,
+          FSL_S_Exists2  ,
+          FSL_M_Clk2     ,
+          FSL_M_Write2   ,
+          FSL_M_Data2    ,
+          FSL_M_Control2 ,
+          FSL_M_Full2    );
+
+  use fsladdress(FSL_S_Clk2     ,
+               FSL_S_Read2    ,
+               FSL_S_Data2    ,
+               FSL_S_Control2 ,
+               FSL_S_Exists2  ,
+               FSL_M_Clk2     ,
+               FSL_M_Write2   ,
+               FSL_M_Data2    ,
+               FSL_M_Control2 ,
+               FSL_M_Full2    );
+
+}
+
+system S {
+  top;
+}
